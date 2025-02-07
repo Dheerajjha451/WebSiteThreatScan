@@ -2,3 +2,5 @@ requests
 beautifulsoup4
 urllib3
 colorama
+flask
+flask-cors
