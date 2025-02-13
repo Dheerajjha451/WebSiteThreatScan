@@ -214,7 +214,28 @@ class WebSecurityScanner:
                         })
         except Exception as e:
             print(f"Error testing command injection on {url}: {str(e)}")
-
+    def check_exposed_webhooks(self, url: str) -> None:
+        webhook_patterns = {
+            'Discord': r'https://discord.com/api/webhooks/\d+/[a-zA-Z0-9_-]+',
+            'Slack': r'https://hooks.slack.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+',
+            'Telegram': r'https://api.telegram.org/bot[A-Za-z0-9:_]+/sendMessage',
+            'GitHub': r'https://github.com/webhooks/.*',
+            'Stripe': r'https://api.stripe.com/v1/[a-zA-Z0-9_/]+',
+            'Twilio': r'https://api.twilio.com/2010-04-01/Accounts/[A-Za-z0-9]+/.*'
+        }
+        try:
+            response = self.session.get(url, verify=False)
+            for service, pattern in webhook_patterns.items():
+                matches = re.findall(pattern, response.text)
+                for match in matches:
+                    self.report_vulnerability({
+                        'type': 'Exposed Webhook',
+                        'url': url,
+                        'service': service,
+                        'exposed_url': match
+                    })
+        except Exception as e:
+            print(f"Error checking exposed webhooks on {url}: {str(e)}")
     def scan(self) -> List[Dict]:
         self.visited_urls = set()
         self.vulnerabilities = []
@@ -229,6 +250,7 @@ class WebSecurityScanner:
                 executor.submit(self.check_directory_traversal, url)
                 executor.submit(self.check_security_headers, url)
                 executor.submit(self.check_command_injection, url)
+                executor.submit(self.check_exposed_webhooks, url)
         return self.vulnerabilities
 
     def report_vulnerability(self, vulnerability: Dict) -> None:
