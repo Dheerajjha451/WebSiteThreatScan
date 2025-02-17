@@ -139,7 +139,7 @@ export default function Home() {
             ) : (
               <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-4">
                 <p className="text-emerald-400 text-sm font-medium">
-                  No vulnerabilities found
+                  {results.message || "No vulnerabilities found"}
                 </p>
               </div>
             )}
