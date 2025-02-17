@@ -260,18 +260,26 @@ class WebSecurityScanner:
             print(f"{key}: {value}")
         print()
 
-@app.route('/scan', methods=['POST'])
 def scan_endpoint():
     try:
         data = request.get_json()
         target_url = data.get('url')
         if not target_url:
             return jsonify({'error': 'URL is required'}), 400
+
         scanner = WebSecurityScanner(target_url)
         vulnerabilities = scanner.scan()
-        return jsonify({'vulnerabilities': vulnerabilities, 'scanned_urls': list(scanner.visited_urls)}), 200
+
+        response_data = {
+            'vulnerabilities': vulnerabilities,
+            'scanned_urls': list(scanner.visited_urls)
+        }
+
+        if not vulnerabilities:
+            response_data['message'] = "No vulnerabilities found."
+
+        return jsonify(response_data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)
