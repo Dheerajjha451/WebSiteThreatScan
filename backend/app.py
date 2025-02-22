@@ -22,6 +22,19 @@ class WebSecurityScanner:
         self.vulnerabilities: List[Dict] = []
         self.session = requests.Session()
         colorama.init()
+        
+        # Define vulnerability severity mappings
+        self.vulnerability_severity = {
+            'SQL Injection': 'High',
+            'Command Injection': 'High',
+            'Directory Traversal': 'High',
+            'Cross-Site Scripting (XSS)': 'Medium',
+            'Potential CSRF Vulnerability': 'Medium',
+            'Security Headers Missing': 'Low',
+            'Insecure Cookie Settings': 'Medium',
+            'Sensitive Information Exposure': 'Medium',
+            'Exposed Webhook': 'Medium'
+        }
 
     def normalize_url(self, url: str) -> str:
         parsed = urllib.parse.urlparse(url)
@@ -56,7 +69,8 @@ class WebSecurityScanner:
                             'type': 'SQL Injection',
                             'url': url,
                             'parameter': param,
-                            'payload': payload
+                            'payload': payload,
+                            'severity': self.vulnerability_severity['SQL Injection']
                         })
             except Exception as e:
                 print(f"Error testing SQL injection on {url}: {str(e)}")
@@ -75,7 +89,8 @@ class WebSecurityScanner:
                             'type': 'Cross-Site Scripting (XSS)',
                             'url': url,
                             'parameter': param,
-                            'payload': payload
+                            'payload': payload,
+                            'severity': self.vulnerability_severity['Cross-Site Scripting (XSS)']
                         })
             except Exception as e:
                 print(f"Error testing XSS on {url}: {str(e)}")
@@ -92,14 +107,18 @@ class WebSecurityScanner:
             for info_type, pattern in sensitive_patterns.items():
                 matches = re.finditer(pattern, response.text)
                 for match in matches:
+                    # Adjust severity based on info type - SSN and API keys are higher severity
+                    adjusted_severity = 'High' if info_type in ['ssn', 'api_key'] else self.vulnerability_severity['Sensitive Information Exposure']
                     self.report_vulnerability({
                         'type': 'Sensitive Information Exposure',
                         'url': url,
                         'info_type': info_type,
-                        'pattern': pattern
+                        'pattern': pattern,
+                        'severity': adjusted_severity
                     })
         except Exception as e:
             print(f"Error checking sensitive information on {url}: {str(e)}")
+            
     def check_csrf(self, url: str) -> None:
         try:
             response = self.session.get(url, verify=False)
@@ -112,7 +131,8 @@ class WebSecurityScanner:
                     self.report_vulnerability({
                         'type': 'Potential CSRF Vulnerability',
                         'url': url,
-                        'details': 'Missing CSRF token in form'
+                        'details': 'Missing CSRF token in form',
+                        'severity': self.vulnerability_severity['Potential CSRF Vulnerability']
                     })
         except Exception as e:
             print(f"Error checking CSRF on {url}: {str(e)}")
@@ -129,12 +149,19 @@ class WebSecurityScanner:
                     issues.append('HttpOnly flag missing')
                 if cookie.domain and 'session' in cookie.name.lower() and cookie.domain != urllib.parse.urlparse(url).netloc:
                     issues.append('Potential session cookie misconfiguration')
+                
+                # Determine severity based on cookie type and issues
+                severity = self.vulnerability_severity['Insecure Cookie Settings']
+                if 'session' in cookie.name.lower() or 'auth' in cookie.name.lower():
+                    severity = 'High'  # Auth/session cookies are high severity
+                
                 if issues:
                     self.report_vulnerability({
                         'type': 'Insecure Cookie Settings',
                         'url': url,
                         'cookie_name': cookie.name,
-                        'issues': ', '.join(issues)
+                        'issues': ', '.join(issues),
+                        'severity': severity
                     })
         except Exception as e:
             print(f"Error checking cookies on {url}: {str(e)}")
@@ -161,7 +188,8 @@ class WebSecurityScanner:
                             'type': 'Directory Traversal',
                             'url': url,
                             'parameter': param,
-                            'payload': payload
+                            'payload': payload,
+                            'severity': self.vulnerability_severity['Directory Traversal']
                         })
         except Exception as e:
             print(f"Error testing directory traversal on {url}: {str(e)}")
@@ -178,11 +206,18 @@ class WebSecurityScanner:
             response = self.session.get(url, verify=False)
             missing = [msg for header, msg in important_headers.items() 
                       if header not in response.headers]
+            
+            # Determine severity based on which headers are missing
+            severity = self.vulnerability_severity['Security Headers Missing']
+            if 'Missing CSP header' in missing or 'Missing HSTS header' in missing:
+                severity = 'Medium'  # CSP and HSTS are more critical
+                
             if missing:
                 self.report_vulnerability({
                     'type': 'Security Headers Missing',
                     'url': url,
-                    'details': ', '.join(missing)
+                    'details': ', '.join(missing),
+                    'severity': severity
                 })
         except Exception as e:
             print(f"Error checking security headers on {url}: {str(e)}")
@@ -210,10 +245,12 @@ class WebSecurityScanner:
                             'type': 'Command Injection',
                             'url': url,
                             'parameter': param,
-                            'payload': payload
+                            'payload': payload,
+                            'severity': self.vulnerability_severity['Command Injection']
                         })
         except Exception as e:
             print(f"Error testing command injection on {url}: {str(e)}")
+            
     def check_exposed_webhooks(self, url: str) -> None:
         webhook_patterns = {
             'Discord': r'https://discord.com/api/webhooks/\d+/[a-zA-Z0-9_-]+',
@@ -228,14 +265,18 @@ class WebSecurityScanner:
             for service, pattern in webhook_patterns.items():
                 matches = re.findall(pattern, response.text)
                 for match in matches:
+                    # Adjust severity based on service - payment services are higher severity
+                    adjusted_severity = 'High' if service in ['Stripe', 'Twilio'] else self.vulnerability_severity['Exposed Webhook']
                     self.report_vulnerability({
                         'type': 'Exposed Webhook',
                         'url': url,
                         'service': service,
-                        'exposed_url': match
+                        'exposed_url': match,
+                        'severity': adjusted_severity
                     })
         except Exception as e:
             print(f"Error checking exposed webhooks on {url}: {str(e)}")
+            
     def scan(self) -> List[Dict]:
         self.visited_urls = set()
         self.vulnerabilities = []
@@ -255,9 +296,17 @@ class WebSecurityScanner:
 
     def report_vulnerability(self, vulnerability: Dict) -> None:
         self.vulnerabilities.append(vulnerability)
-        print(f"{colorama.Fore.RED}[VULNERABILITY FOUND]{colorama.Style.RESET_ALL}")
+        # Choose color based on severity
+        severity_color = colorama.Fore.YELLOW  # Default for Medium
+        if vulnerability['severity'] == 'High':
+            severity_color = colorama.Fore.RED
+        elif vulnerability['severity'] == 'Low':
+            severity_color = colorama.Fore.GREEN
+            
+        print(f"{severity_color}[VULNERABILITY FOUND - {vulnerability['severity']}]{colorama.Style.RESET_ALL}")
         for key, value in vulnerability.items():
-            print(f"{key}: {value}")
+            if key != 'severity':  # We already displayed severity in the header
+                print(f"{key}: {value}")
         print()
 
 def scan_endpoint():
@@ -270,9 +319,18 @@ def scan_endpoint():
         scanner = WebSecurityScanner(target_url)
         vulnerabilities = scanner.scan()
 
+        # Count vulnerabilities by severity for summary
+        severity_counts = {'High': 0, 'Medium': 0, 'Low': 0}
+        for vuln in vulnerabilities:
+            severity_counts[vuln['severity']] += 1
+
         response_data = {
             'vulnerabilities': vulnerabilities,
-            'scanned_urls': list(scanner.visited_urls)
+            'scanned_urls': list(scanner.visited_urls),
+            'summary': {
+                'total': len(vulnerabilities),
+                'by_severity': severity_counts
+            }
         }
 
         if not vulnerabilities:
@@ -281,5 +339,11 @@ def scan_endpoint():
         return jsonify(response_data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Add route for the scan endpoint
+@app.route('/api/scan', methods=['POST'])
+def api_scan():
+    return scan_endpoint()
+
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)
