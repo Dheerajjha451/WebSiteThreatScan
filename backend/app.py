@@ -75,21 +75,32 @@ class WebSecurityScanner:
                     new_params[param] = [payload]
                     new_query = urllib.parse.urlencode(new_params, doseq=True)
                     test_url = urllib.parse.urlunparse(
-                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+                        (
+                            parsed.scheme,
+                            parsed.netloc,
+                            parsed.path,
+                            parsed.params,
+                            new_query,
+                            parsed.fragment,
+                        )
                     )
                     response = self.session.get(test_url, verify=False)
                     if any(
                         error in response.text.lower()
                         for error in ["sql", "mysql", "sqlite", "postgresql", "oracle"]
                     ):
-                        self.report_vulnerability({
-                            "type": "SQL Injection",
-                            "url": url,
-                            "parameter": param,
-                            "payload": payload,
-                        })
+                        self.report_vulnerability(
+                            {
+                                "type": "SQL Injection",
+                                "url": url,
+                                "parameter": param,
+                                "payload": payload,
+                            }
+                        )
             except Exception as e:
-                logger.error("Error testing SQL injection on %s: %s", url, str(e), exc_info=True)
+                logger.error(
+                    "Error testing SQL injection on %s: %s", url, str(e), exc_info=True
+                )
 
     def check_xss(self, url: str) -> None:
         xss_payloads = [
@@ -106,16 +117,25 @@ class WebSecurityScanner:
                     new_params[param] = [urllib.parse.quote(payload)]
                     new_query = urllib.parse.urlencode(new_params, doseq=True)
                     test_url = urllib.parse.urlunparse(
-                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+                        (
+                            parsed.scheme,
+                            parsed.netloc,
+                            parsed.path,
+                            parsed.params,
+                            new_query,
+                            parsed.fragment,
+                        )
                     )
                     response = self.session.get(test_url, verify=False)
                     if payload in response.text:
-                        self.report_vulnerability({
-                            "type": "Cross-Site Scripting (XSS)",
-                            "url": url,
-                            "parameter": param,
-                            "payload": payload,
-                        })
+                        self.report_vulnerability(
+                            {
+                                "type": "Cross-Site Scripting (XSS)",
+                                "url": url,
+                                "parameter": param,
+                                "payload": payload,
+                            }
+                        )
             except Exception as e:
                 logger.error("Error testing XSS on %s: %s", url, str(e), exc_info=True)
 
@@ -210,21 +230,39 @@ class WebSecurityScanner:
                     new_params[param] = [payload]
                     new_query = urllib.parse.urlencode(new_params, doseq=True)
                     test_url = urllib.parse.urlunparse(
-                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+                        (
+                            parsed.scheme,
+                            parsed.netloc,
+                            parsed.path,
+                            parsed.params,
+                            new_query,
+                            parsed.fragment,
+                        )
                     )
                     response = self.session.get(test_url, verify=False)
                     if any(
                         indicator in response.text.lower()
-                        for indicator in ["root:x:", "[extensions]", "for 16-bit app support"]
+                        for indicator in [
+                            "root:x:",
+                            "[extensions]",
+                            "for 16-bit app support",
+                        ]
                     ):
-                        self.report_vulnerability({
-                            "type": "Directory Traversal",
-                            "url": url,
-                            "parameter": param,
-                            "payload": payload,
-                        })
+                        self.report_vulnerability(
+                            {
+                                "type": "Directory Traversal",
+                                "url": url,
+                                "parameter": param,
+                                "payload": payload,
+                            }
+                        )
         except Exception as e:
-            logger.error("Error testing directory traversal on %s: %s", url, str(e), exc_info=True)
+            logger.error(
+                "Error testing directory traversal on %s: %s",
+                url,
+                str(e),
+                exc_info=True,
+            )
 
     def check_security_headers(self, url: str) -> None:
         important_headers = {
@@ -265,21 +303,37 @@ class WebSecurityScanner:
                     new_params[param] = [urllib.parse.quote(payload)]
                     new_query = urllib.parse.urlencode(new_params, doseq=True)
                     test_url = urllib.parse.urlunparse(
-                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+                        (
+                            parsed.scheme,
+                            parsed.netloc,
+                            parsed.path,
+                            parsed.params,
+                            new_query,
+                            parsed.fragment,
+                        )
                     )
                     response = self.session.get(test_url, verify=False)
                     if any(
                         indicator in response.text.lower()
-                        for indicator in ["root:", "uid=", "volume in drive", "Directory of"]
+                        for indicator in [
+                            "root:",
+                            "uid=",
+                            "volume in drive",
+                            "Directory of",
+                        ]
                     ):
-                        self.report_vulnerability({
-                            "type": "Command Injection",
-                            "url": url,
-                            "parameter": param,
-                            "payload": payload,
-                        })
+                        self.report_vulnerability(
+                            {
+                                "type": "Command Injection",
+                                "url": url,
+                                "parameter": param,
+                                "payload": payload,
+                            }
+                        )
         except Exception as e:
-            logger.error("Error testing command injection on %s: %s", url, str(e), exc_info=True)
+            logger.error(
+                "Error testing command injection on %s: %s", url, str(e), exc_info=True
+            )
 
     def check_exposed_webhooks(self, url: str) -> None:
         webhook_patterns = {
@@ -311,31 +365,44 @@ class WebSecurityScanner:
     def check_ssl_tls(self, url: str) -> None:
         try:
             parsed = urllib.parse.urlparse(url)
-            if parsed.scheme != 'https':
-                self.report_vulnerability({
-                    "type": "Insecure Protocol",
-                    "url": url,
-                    "details": "The website is not using HTTPS."
-                })
+            if parsed.scheme != "https":
+                self.report_vulnerability(
+                    {
+                        "type": "Insecure Protocol",
+                        "url": url,
+                        "details": "The website is not using HTTPS.",
+                    }
+                )
             else:
                 response = self.session.get(url, verify=True)
                 if response.status_code == 200:
                     logger.info("The website %s is SSL/TLS certified.", url)
                 else:
-                    self.report_vulnerability({
-                        "type": "SSL/TLS Certification Issue",
-                        "url": url,
-                        "details": "The website has an SSL/TLS certification issue."
-                    })
+                    self.report_vulnerability(
+                        {
+                            "type": "SSL/TLS Certification Issue",
+                            "url": url,
+                            "details": "The website has an SSL/TLS certification issue.",
+                        }
+                    )
         except requests.exceptions.SSLError as e:
-            self.report_vulnerability({
-                "type": "SSL/TLS Certification Issue",
-                "url": url,
-                "details": "The website has an SSL/TLS certification issue."
-            })
-            logger.error("SSL/TLS certification issue on %s: %s", url, str(e), exc_info=True)
+            self.report_vulnerability(
+                {
+                    "type": "SSL/TLS Certification Issue",
+                    "url": url,
+                    "details": "The website has an SSL/TLS certification issue.",
+                }
+            )
+            logger.error(
+                "SSL/TLS certification issue on %s: %s", url, str(e), exc_info=True
+            )
         except Exception as e:
-            logger.error("Error checking SSL/TLS certification on %s: %s", url, str(e), exc_info=True)
+            logger.error(
+                "Error checking SSL/TLS certification on %s: %s",
+                url,
+                str(e),
+                exc_info=True,
+            )
 
     def scan(self) -> List[Dict]:
         self.visited_urls = set()
