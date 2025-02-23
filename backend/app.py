@@ -11,6 +11,7 @@ import urllib3
 import logging
 import os
 from datetime import datetime
+import requests.exceptions
 
 # Configure logging
 log_directory = "logs"
@@ -84,7 +85,7 @@ class WebSecurityScanner:
                             parsed.fragment,
                         )
                     )
-                    response = self.session.get(test_url, verify=False)
+                    response = self.session.get(test_url, verify=False, timeout=5)
                     if any(
                         error in response.text.lower()
                         for error in ["sql", "mysql", "sqlite", "postgresql", "oracle"]
@@ -97,9 +98,33 @@ class WebSecurityScanner:
                                 "payload": payload,
                             }
                         )
-            except Exception as e:
+            except requests.exceptions.Timeout as e:
                 logger.error(
-                    "Error testing SQL injection on %s: %s", url, str(e), exc_info=True
+                    "Timeout in SQL injection check for %s: %s",
+                    url,
+                    str(e),
+                    exc_info=True,
+                )
+            except requests.exceptions.SSLError as e:
+                logger.error(
+                    "SSL error in SQL injection check for %s: %s",
+                    url,
+                    str(e),
+                    exc_info=True,
+                )
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    "Request error in SQL injection check for %s: %s",
+                    url,
+                    str(e),
+                    exc_info=True,
+                )
+            except ValueError as e:
+                logger.error(
+                    "Parsing error in SQL injection check for %s: %s",
+                    url,
+                    str(e),
+                    exc_info=True,
                 )
 
     def check_xss(self, url: str) -> None:
@@ -126,7 +151,7 @@ class WebSecurityScanner:
                             parsed.fragment,
                         )
                     )
-                    response = self.session.get(test_url, verify=False)
+                    response = self.session.get(test_url, verify=False, timeout=5)
                     if payload in response.text:
                         self.report_vulnerability(
                             {
@@ -136,8 +161,18 @@ class WebSecurityScanner:
                                 "payload": payload,
                             }
                         )
-            except Exception as e:
-                logger.error("Error testing XSS on %s: %s", url, str(e), exc_info=True)
+            except requests.exceptions.Timeout as e:
+                logger.error(
+                    "Timeout in XSS check for %s: %s", url, str(e), exc_info=True
+                )
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    "Request error in XSS check for %s: %s", url, str(e), exc_info=True
+                )
+            except ValueError as e:
+                logger.error(
+                    "Parsing error in XSS check for %s: %s", url, str(e), exc_info=True
+                )
 
     def check_sensitive_info(self, url: str) -> None:
         sensitive_patterns = {
@@ -374,7 +409,7 @@ class WebSecurityScanner:
                     }
                 )
             else:
-                response = self.session.get(url, verify=True)
+                response = self.session.get(url, verify=True, timeout=5)
                 if response.status_code == 200:
                     logger.info("The website %s is SSL/TLS certified.", url)
                 else:
@@ -382,9 +417,14 @@ class WebSecurityScanner:
                         {
                             "type": "SSL/TLS Certification Issue",
                             "url": url,
-                            "details": "The website has an SSL/TLS certification issue.",
+                            "details": "The website responded with status code %d."
+                            % response.status_code,
                         }
                     )
+        except requests.exceptions.Timeout as e:
+            logger.error(
+                "Timeout in SSL/TLS check for %s: %s", url, str(e), exc_info=True
+            )
         except requests.exceptions.SSLError as e:
             self.report_vulnerability(
                 {
@@ -394,14 +434,15 @@ class WebSecurityScanner:
                 }
             )
             logger.error(
-                "SSL/TLS certification issue on %s: %s", url, str(e), exc_info=True
+                "SSL error in SSL/TLS check for %s: %s", url, str(e), exc_info=True
             )
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             logger.error(
-                "Error checking SSL/TLS certification on %s: %s",
-                url,
-                str(e),
-                exc_info=True,
+                "Request error in SSL/TLS check for %s: %s", url, str(e), exc_info=True
+            )
+        except ValueError as e:
+            logger.error(
+                "Parsing error in SSL/TLS check for %s: %s", url, str(e), exc_info=True
             )
 
     def scan(self) -> List[Dict]:
