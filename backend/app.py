@@ -1,17 +1,20 @@
-import colorama
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import requests
-from bs4 import BeautifulSoup
-import urllib.parse
-import re
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Set
-import urllib3
+import asyncio
 import logging
 import os
+import re
+import urllib.parse
 from datetime import datetime
+from typing import Dict, List, Set
+
+import aiohttp
+import colorama
+import requests
 import requests.exceptions
+import urllib3
+from aiohttp import ClientTimeout
+from bs4 import BeautifulSoup
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 # Configure logging
 log_directory = "logs"
@@ -42,7 +45,7 @@ class WebSecurityScanner:
         self.max_depth = max_depth
         self.visited_urls: Set[str] = set()
         self.vulnerabilities: List[Dict] = []
-        self.session = requests.Session()
+        self.timeout = ClientTimeout(total=10)
         colorama.init()
 
     @staticmethod
@@ -50,22 +53,19 @@ class WebSecurityScanner:
         parsed = urllib.parse.urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
 
-    def crawl(self, url: str, depth: int = 0) -> None:
-        if depth > self.max_depth or url in self.visited_urls:
-            return
+    async def async_get(
+        self, session: aiohttp.ClientSession, url: str, verify: bool = False
+    ) -> tuple:
         try:
-            self.visited_urls.add(url)
-            response = self.session.get(url, verify=False)
-            soup = BeautifulSoup(response.text, "html.parser")
-            links = soup.find_all("a", href=True)
-            for link in links:
-                next_url = urllib.parse.urljoin(url, link["href"])
-                if next_url.startswith(self.target_url):
-                    self.crawl(next_url, depth + 1)
+            async with session.get(url, ssl=verify, timeout=self.timeout) as response:
+                return await response.text(), response.headers, response.status
         except Exception as e:
-            logger.error("Error crawling %s: %s", url, str(e), exc_info=True)
+            logger.error("Error in async_get for %s: %s", url, str(e), exc_info=True)
+            return None, None, None
 
-    def check_sql_injection(self, url: str) -> None:
+    async def check_sql_injection_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         sql_payloads = ["'", "1' OR '1'='1", "' OR 1=1--", "' UNION SELECT NULL--"]
         for payload in sql_payloads:
             try:
@@ -85,9 +85,9 @@ class WebSecurityScanner:
                             parsed.fragment,
                         )
                     )
-                    response = self.session.get(test_url, verify=False, timeout=5)
-                    if any(
-                        error in response.text.lower()
+                    text, _, _ = await self.async_get(session, test_url)
+                    if text and any(
+                        error in text.lower()
                         for error in ["sql", "mysql", "sqlite", "postgresql", "oracle"]
                     ):
                         self.report_vulnerability(
@@ -98,36 +98,15 @@ class WebSecurityScanner:
                                 "payload": payload,
                             }
                         )
-            except requests.exceptions.Timeout as e:
+            except Exception as e:
                 logger.error(
-                    "Timeout in SQL injection check for %s: %s",
-                    url,
-                    str(e),
-                    exc_info=True,
-                )
-            except requests.exceptions.SSLError as e:
-                logger.error(
-                    "SSL error in SQL injection check for %s: %s",
-                    url,
-                    str(e),
-                    exc_info=True,
-                )
-            except requests.exceptions.RequestException as e:
-                logger.error(
-                    "Request error in SQL injection check for %s: %s",
-                    url,
-                    str(e),
-                    exc_info=True,
-                )
-            except ValueError as e:
-                logger.error(
-                    "Parsing error in SQL injection check for %s: %s",
+                    "Error in SQL injection check for %s: %s",
                     url,
                     str(e),
                     exc_info=True,
                 )
 
-    def check_xss(self, url: str) -> None:
+    async def check_xss_async(self, session: aiohttp.ClientSession, url: str) -> None:
         xss_payloads = [
             "<script>alert('XSS')</script>",
             "<img src=x onerror=alert('XSS')>",
@@ -151,8 +130,8 @@ class WebSecurityScanner:
                             parsed.fragment,
                         )
                     )
-                    response = self.session.get(test_url, verify=False, timeout=5)
-                    if payload in response.text:
+                    text, _, _ = await self.async_get(session, test_url)
+                    if text and payload in text:
                         self.report_vulnerability(
                             {
                                 "type": "Cross-Site Scripting (XSS)",
@@ -161,20 +140,14 @@ class WebSecurityScanner:
                                 "payload": payload,
                             }
                         )
-            except requests.exceptions.Timeout as e:
+            except Exception as e:
                 logger.error(
-                    "Timeout in XSS check for %s: %s", url, str(e), exc_info=True
-                )
-            except requests.exceptions.RequestException as e:
-                logger.error(
-                    "Request error in XSS check for %s: %s", url, str(e), exc_info=True
-                )
-            except ValueError as e:
-                logger.error(
-                    "Parsing error in XSS check for %s: %s", url, str(e), exc_info=True
+                    "Error in XSS check for %s: %s", url, str(e), exc_info=True
                 )
 
-    def check_sensitive_info(self, url: str) -> None:
+    async def check_sensitive_info_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         sensitive_patterns = {
             "email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
             "phone": r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b",
@@ -182,9 +155,9 @@ class WebSecurityScanner:
             "api_key": r'api[_-]?key[_-]?([\'"|`])([a-zA-Z0-9]{32,45})\1',
         }
         try:
-            response = self.session.get(url, verify=False)
+            text, _, _ = await self.async_get(session, url)
             for info_type, pattern in sensitive_patterns.items():
-                matches = re.finditer(pattern, response.text)
+                matches = re.finditer(pattern, text)
                 for _ in matches:
                     self.report_vulnerability(
                         {
@@ -202,10 +175,10 @@ class WebSecurityScanner:
                 exc_info=True,
             )
 
-    def check_csrf(self, url: str) -> None:
+    async def check_csrf_async(self, session: aiohttp.ClientSession, url: str) -> None:
         try:
-            response = self.session.get(url, verify=False)
-            soup = BeautifulSoup(response.text, "html.parser")
+            text, _, _ = await self.async_get(session, url)
+            soup = BeautifulSoup(text, "html.parser")
             forms = soup.find_all("form")
             for form in forms:
                 tokens = form.find_all(
@@ -222,20 +195,22 @@ class WebSecurityScanner:
         except Exception as e:
             logger.error("Error checking CSRF on %s: %s", url, str(e), exc_info=True)
 
-    def check_insecure_cookies(self, url: str) -> None:
+    async def check_insecure_cookies_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         try:
-            response = self.session.get(url, verify=False)
-            cookies = response.cookies
+            _, headers, _ = await self.async_get(session, url)
+            cookies = headers.get("Set-Cookie", "").split(",")
             for cookie in cookies:
                 issues = []
-                if not cookie.secure:
+                if "Secure" not in cookie:
                     issues.append("Secure flag missing")
-                if not cookie.has_nonstandard_attr("HttpOnly"):
+                if "HttpOnly" not in cookie:
                     issues.append("HttpOnly flag missing")
                 if (
-                    cookie.domain
-                    and "session" in cookie.name.lower()
-                    and cookie.domain != urllib.parse.urlparse(url).netloc
+                    "Domain" in cookie
+                    and "session" in cookie.lower()
+                    and "Domain" not in urllib.parse.urlparse(url).netloc
                 ):
                     issues.append("Potential session cookie misconfiguration")
                 if issues:
@@ -243,14 +218,16 @@ class WebSecurityScanner:
                         {
                             "type": "Insecure Cookie Settings",
                             "url": url,
-                            "cookie_name": cookie.name,
+                            "cookie_name": cookie.split("=")[0],
                             "issues": ", ".join(issues),
                         }
                     )
         except Exception as e:
             logger.error("Error checking cookies on %s: %s", url, str(e), exc_info=True)
 
-    def check_directory_traversal(self, url: str) -> None:
+    async def check_directory_traversal_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         payloads = [
             "../../etc/passwd",
             "%2e%2e%2fetc%2fpasswd",
@@ -274,9 +251,9 @@ class WebSecurityScanner:
                             parsed.fragment,
                         )
                     )
-                    response = self.session.get(test_url, verify=False)
-                    if any(
-                        indicator in response.text.lower()
+                    text, _, _ = await self.async_get(session, test_url)
+                    if text and any(
+                        indicator in text.lower()
                         for indicator in [
                             "root:x:",
                             "[extensions]",
@@ -299,7 +276,9 @@ class WebSecurityScanner:
                 exc_info=True,
             )
 
-    def check_security_headers(self, url: str) -> None:
+    async def check_security_headers_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         important_headers = {
             "Content-Security-Policy": "Missing CSP header",
             "X-Content-Type-Options": "Missing X-Content-Type-Options header",
@@ -308,11 +287,11 @@ class WebSecurityScanner:
             "X-XSS-Protection": "Missing X-XSS-Protection header",
         }
         try:
-            response = self.session.get(url, verify=False)
+            _, headers, _ = await self.async_get(session, url)
             missing = [
                 msg
                 for header, msg in important_headers.items()
-                if header not in response.headers
+                if header not in headers
             ]
             if missing:
                 self.report_vulnerability(
@@ -327,7 +306,9 @@ class WebSecurityScanner:
                 "Error checking security headers on %s: %s", url, str(e), exc_info=True
             )
 
-    def check_command_injection(self, url: str) -> None:
+    async def check_command_injection_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         payloads = ["; ls", "| dir", "`id`", "$(whoami)"]
         try:
             parsed = urllib.parse.urlparse(url)
@@ -347,9 +328,9 @@ class WebSecurityScanner:
                             parsed.fragment,
                         )
                     )
-                    response = self.session.get(test_url, verify=False)
-                    if any(
-                        indicator in response.text.lower()
+                    text, _, _ = await self.async_get(session, test_url)
+                    if text and any(
+                        indicator in text.lower()
                         for indicator in [
                             "root:",
                             "uid=",
@@ -370,7 +351,9 @@ class WebSecurityScanner:
                 "Error testing command injection on %s: %s", url, str(e), exc_info=True
             )
 
-    def check_exposed_webhooks(self, url: str) -> None:
+    async def check_exposed_webhooks_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         webhook_patterns = {
             "Discord": r"https://discord.com/api/webhooks/\d+/[a-zA-Z0-9_-]+",
             "Slack": r"https://hooks.slack.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+",
@@ -380,9 +363,9 @@ class WebSecurityScanner:
             "Twilio": r"https://api.twilio.com/2010-04-01/Accounts/[A-Za-z0-9]+/.*",
         }
         try:
-            response = self.session.get(url, verify=False)
+            text, _, _ = await self.async_get(session, url)
             for service, pattern in webhook_patterns.items():
-                matches = re.findall(pattern, response.text)
+                matches = re.findall(pattern, text)
                 for match in matches:
                     self.report_vulnerability(
                         {
@@ -397,7 +380,9 @@ class WebSecurityScanner:
                 "Error checking exposed webhooks on %s: %s", url, str(e), exc_info=True
             )
 
-    def check_ssl_tls(self, url: str) -> None:
+    async def check_ssl_tls_async(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> None:
         try:
             parsed = urllib.parse.urlparse(url)
             if parsed.scheme != "https":
@@ -409,8 +394,8 @@ class WebSecurityScanner:
                     }
                 )
             else:
-                response = self.session.get(url, verify=True, timeout=5)
-                if response.status_code == 200:
+                _, _, status = await self.async_get(session, url, verify=True)
+                if status == 200:
                     logger.info("The website %s is SSL/TLS certified.", url)
                 else:
                     self.report_vulnerability(
@@ -418,50 +403,61 @@ class WebSecurityScanner:
                             "type": "SSL/TLS Certification Issue",
                             "url": url,
                             "details": "The website responded with status code %d."
-                            % response.status_code,
+                            % status,
                         }
                     )
-        except requests.exceptions.Timeout as e:
+        except Exception as e:
             logger.error(
-                "Timeout in SSL/TLS check for %s: %s", url, str(e), exc_info=True
-            )
-        except requests.exceptions.SSLError as e:
-            self.report_vulnerability(
-                {
-                    "type": "SSL/TLS Certification Issue",
-                    "url": url,
-                    "details": "The website has an SSL/TLS certification issue.",
-                }
-            )
-            logger.error(
-                "SSL error in SSL/TLS check for %s: %s", url, str(e), exc_info=True
-            )
-        except requests.exceptions.RequestException as e:
-            logger.error(
-                "Request error in SSL/TLS check for %s: %s", url, str(e), exc_info=True
-            )
-        except ValueError as e:
-            logger.error(
-                "Parsing error in SSL/TLS check for %s: %s", url, str(e), exc_info=True
+                "Error in SSL/TLS check for %s: %s", url, str(e), exc_info=True
             )
 
-    def scan(self) -> List[Dict]:
+    async def scan_async(self) -> List[Dict]:
         self.visited_urls = set()
         self.vulnerabilities = []
+
+        # First crawl synchronously (or implement async crawling if needed)
         self.crawl(self.target_url)
-        with ThreadPoolExecutor(max_workers=10) as executor:
+
+        async with aiohttp.ClientSession() as session:
+            tasks = []
             for url in self.visited_urls:
-                executor.submit(self.check_sql_injection, url)
-                executor.submit(self.check_xss, url)
-                executor.submit(self.check_sensitive_info, url)
-                executor.submit(self.check_csrf, url)
-                executor.submit(self.check_insecure_cookies, url)
-                executor.submit(self.check_directory_traversal, url)
-                executor.submit(self.check_security_headers, url)
-                executor.submit(self.check_command_injection, url)
-                executor.submit(self.check_exposed_webhooks, url)
-                executor.submit(self.check_ssl_tls, url)
+                tasks.extend(
+                    [
+                        self.check_sql_injection_async(session, url),
+                        self.check_xss_async(session, url),
+                        self.check_sensitive_info_async(session, url),
+                        self.check_csrf_async(session, url),
+                        self.check_insecure_cookies_async(session, url),
+                        self.check_directory_traversal_async(session, url),
+                        self.check_security_headers_async(session, url),
+                        self.check_command_injection_async(session, url),
+                        self.check_exposed_webhooks_async(session, url),
+                        self.check_ssl_tls_async(session, url),
+                    ]
+                )
+
+            # Run all checks concurrently
+            await asyncio.gather(*tasks, return_exceptions=True)
+
         return self.vulnerabilities
+
+    def scan(self) -> List[Dict]:
+        return asyncio.run(self.scan_async())
+
+    def crawl(self, url: str, depth: int = 0) -> None:
+        if depth > self.max_depth or url in self.visited_urls:
+            return
+        try:
+            self.visited_urls.add(url)
+            response = requests.get(url, verify=False)
+            soup = BeautifulSoup(response.text, "html.parser")
+            links = soup.find_all("a", href=True)
+            for link in links:
+                next_url = urllib.parse.urljoin(url, link["href"])
+                if next_url.startswith(self.target_url):
+                    self.crawl(next_url, depth + 1)
+        except Exception as e:
+            logger.error("Error crawling %s: %s", url, str(e), exc_info=True)
 
     def report_vulnerability(self, vulnerability: Dict) -> None:
         self.vulnerabilities.append(vulnerability)
@@ -471,7 +467,7 @@ class WebSecurityScanner:
         logger.warning("%s", "-" * 50)
 
 
-def scan_endpoint():
+async def async_scan_endpoint():
     try:
         data = request.get_json()
         target_url = data.get("url")
@@ -481,7 +477,7 @@ def scan_endpoint():
 
         logger.info("Starting security scan for: %s", target_url)
         scanner = WebSecurityScanner(target_url)
-        vulnerabilities = scanner.scan()
+        vulnerabilities = await scanner.scan_async()
 
         response_data = {
             "vulnerabilities": vulnerabilities,
@@ -500,6 +496,10 @@ def scan_endpoint():
     except Exception as e:
         logger.error("Error during scan: %s", str(e), exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+def scan_endpoint():
+    return asyncio.run(async_scan_endpoint())
 
 
 if __name__ == "__main__":
