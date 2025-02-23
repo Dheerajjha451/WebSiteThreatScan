@@ -308,6 +308,35 @@ class WebSecurityScanner:
                 "Error checking exposed webhooks on %s: %s", url, str(e), exc_info=True
             )
 
+    def check_ssl_tls(self, url: str) -> None:
+        try:
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme != 'https':
+                self.report_vulnerability({
+                    "type": "Insecure Protocol",
+                    "url": url,
+                    "details": "The website is not using HTTPS."
+                })
+            else:
+                response = self.session.get(url, verify=True)
+                if response.status_code == 200:
+                    logger.info("The website %s is SSL/TLS certified.", url)
+                else:
+                    self.report_vulnerability({
+                        "type": "SSL/TLS Certification Issue",
+                        "url": url,
+                        "details": "The website has an SSL/TLS certification issue."
+                    })
+        except requests.exceptions.SSLError as e:
+            self.report_vulnerability({
+                "type": "SSL/TLS Certification Issue",
+                "url": url,
+                "details": "The website has an SSL/TLS certification issue."
+            })
+            logger.error("SSL/TLS certification issue on %s: %s", url, str(e), exc_info=True)
+        except Exception as e:
+            logger.error("Error checking SSL/TLS certification on %s: %s", url, str(e), exc_info=True)
+
     def scan(self) -> List[Dict]:
         self.visited_urls = set()
         self.vulnerabilities = []
@@ -323,6 +352,7 @@ class WebSecurityScanner:
                 executor.submit(self.check_security_headers, url)
                 executor.submit(self.check_command_injection, url)
                 executor.submit(self.check_exposed_webhooks, url)
+                executor.submit(self.check_ssl_tls, url)
         return self.vulnerabilities
 
     def report_vulnerability(self, vulnerability: Dict) -> None:
