@@ -71,26 +71,25 @@ class WebSecurityScanner:
                 parsed = urllib.parse.urlparse(url)
                 params = urllib.parse.parse_qs(parsed.query)
                 for param in params:
-                    test_url = url.replace(
-                        f"{param}={params[param][0]}", f"{param}={payload}"
+                    new_params = dict(params)
+                    new_params[param] = [payload]
+                    new_query = urllib.parse.urlencode(new_params, doseq=True)
+                    test_url = urllib.parse.urlunparse(
+                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
                     )
                     response = self.session.get(test_url, verify=False)
                     if any(
                         error in response.text.lower()
                         for error in ["sql", "mysql", "sqlite", "postgresql", "oracle"]
                     ):
-                        self.report_vulnerability(
-                            {
-                                "type": "SQL Injection",
-                                "url": url,
-                                "parameter": param,
-                                "payload": payload,
-                            }
-                        )
+                        self.report_vulnerability({
+                            "type": "SQL Injection",
+                            "url": url,
+                            "parameter": param,
+                            "payload": payload,
+                        })
             except Exception as e:
-                logger.error(
-                    "Error testing SQL injection on %s: %s", url, str(e), exc_info=True
-                )
+                logger.error("Error testing SQL injection on %s: %s", url, str(e), exc_info=True)
 
     def check_xss(self, url: str) -> None:
         xss_payloads = [
@@ -103,20 +102,20 @@ class WebSecurityScanner:
                 parsed = urllib.parse.urlparse(url)
                 params = urllib.parse.parse_qs(parsed.query)
                 for param in params:
-                    test_url = url.replace(
-                        f"{param}={params[param][0]}",
-                        f"{param}={urllib.parse.quote(payload)}",
+                    new_params = dict(params)
+                    new_params[param] = [urllib.parse.quote(payload)]
+                    new_query = urllib.parse.urlencode(new_params, doseq=True)
+                    test_url = urllib.parse.urlunparse(
+                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
                     )
                     response = self.session.get(test_url, verify=False)
                     if payload in response.text:
-                        self.report_vulnerability(
-                            {
-                                "type": "Cross-Site Scripting (XSS)",
-                                "url": url,
-                                "parameter": param,
-                                "payload": payload,
-                            }
-                        )
+                        self.report_vulnerability({
+                            "type": "Cross-Site Scripting (XSS)",
+                            "url": url,
+                            "parameter": param,
+                            "payload": payload,
+                        })
             except Exception as e:
                 logger.error("Error testing XSS on %s: %s", url, str(e), exc_info=True)
 
@@ -207,33 +206,25 @@ class WebSecurityScanner:
             params = urllib.parse.parse_qs(parsed.query)
             for param in params:
                 for payload in payloads:
-                    test_url = url.replace(
-                        f"{param}={params[param][0]}", f"{param}={payload}"
+                    new_params = dict(params)
+                    new_params[param] = [payload]
+                    new_query = urllib.parse.urlencode(new_params, doseq=True)
+                    test_url = urllib.parse.urlunparse(
+                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
                     )
                     response = self.session.get(test_url, verify=False)
                     if any(
                         indicator in response.text.lower()
-                        for indicator in [
-                            "root:x:",
-                            "[extensions]",
-                            "for 16-bit app support",
-                        ]
+                        for indicator in ["root:x:", "[extensions]", "for 16-bit app support"]
                     ):
-                        self.report_vulnerability(
-                            {
-                                "type": "Directory Traversal",
-                                "url": url,
-                                "parameter": param,
-                                "payload": payload,
-                            }
-                        )
+                        self.report_vulnerability({
+                            "type": "Directory Traversal",
+                            "url": url,
+                            "parameter": param,
+                            "payload": payload,
+                        })
         except Exception as e:
-            logger.error(
-                "Error testing directory traversal on %s: %s",
-                url,
-                str(e),
-                exc_info=True,
-            )
+            logger.error("Error testing directory traversal on %s: %s", url, str(e), exc_info=True)
 
     def check_security_headers(self, url: str) -> None:
         important_headers = {
@@ -270,32 +261,25 @@ class WebSecurityScanner:
             params = urllib.parse.parse_qs(parsed.query)
             for param in params:
                 for payload in payloads:
-                    test_url = url.replace(
-                        f"{param}={params[param][0]}",
-                        f"{param}={urllib.parse.quote(payload)}",
+                    new_params = dict(params)
+                    new_params[param] = [urllib.parse.quote(payload)]
+                    new_query = urllib.parse.urlencode(new_params, doseq=True)
+                    test_url = urllib.parse.urlunparse(
+                        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
                     )
                     response = self.session.get(test_url, verify=False)
                     if any(
                         indicator in response.text.lower()
-                        for indicator in [
-                            "root:",
-                            "uid=",
-                            "volume in drive",
-                            "Directory of",
-                        ]
+                        for indicator in ["root:", "uid=", "volume in drive", "Directory of"]
                     ):
-                        self.report_vulnerability(
-                            {
-                                "type": "Command Injection",
-                                "url": url,
-                                "parameter": param,
-                                "payload": payload,
-                            }
-                        )
+                        self.report_vulnerability({
+                            "type": "Command Injection",
+                            "url": url,
+                            "parameter": param,
+                            "payload": payload,
+                        })
         except Exception as e:
-            logger.error(
-                "Error testing command injection on %s: %s", url, str(e), exc_info=True
-            )
+            logger.error("Error testing command injection on %s: %s", url, str(e), exc_info=True)
 
     def check_exposed_webhooks(self, url: str) -> None:
         webhook_patterns = {
