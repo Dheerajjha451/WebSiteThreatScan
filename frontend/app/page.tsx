@@ -1,9 +1,19 @@
 "use client";
 import { useState } from "react";
+interface Vulnerability {
+  id: string;
+  description: string;
+  severity: string;
+}
 
+interface ScanResults {
+  vulnerabilities: Vulnerability[];
+  scanned_urls: string[];
+  message?: string;
+}
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<ScanResults | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -31,11 +41,13 @@ export default function Home() {
 
       const data = await response.json();
       setResults(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+          setError(err.message);
+      } else {
+          setError("An unknown error occurred.");
+      }
+  }
   };
 
   return (
