@@ -10,6 +10,16 @@ interface ScanResults {
   vulnerabilities: Vulnerability[];
   scanned_urls: string[];
   message?: string;
+  sql_injection?: boolean;
+  xss?: boolean;
+  sensitive_info?: boolean;
+  csrf?: boolean;
+  insecure_cookies?: boolean;
+  directory_traversal?: boolean;
+  security_headers?: boolean;
+  command_injection?: boolean;
+  exposed_webhooks?: boolean;
+  ssl_tls?: boolean;
 }
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -159,6 +169,24 @@ export default function Home() {
                 </p>
               </div>
             )}
+              {[
+              { key: 'sql_injection', label: 'SQL Injection' },
+              { key: 'xss', label: 'XSS' },
+              { key: 'sensitive_info', label: 'Sensitive Information' },
+              { key: 'csrf', label: 'CSRF' },
+              { key: 'insecure_cookies', label: 'Insecure Cookies' },
+              { key: 'directory_traversal', label: 'Directory Traversal' },
+              { key: 'security_headers', label: 'Security Headers' },
+              { key: 'command_injection', label: 'Command Injection' },
+              { key: 'exposed_webhooks', label: 'Exposed Webhooks' },
+              { key: 'ssl_tls', label: 'SSL/TLS' },
+            ].map(({ key, label }) => (
+              <div key={key} className="bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-4">
+                <p className="text-emerald-400 text-sm font-medium">
+                  {results[key as keyof ScanResults] ? `${label} vulnerability found` : `No ${label} vulnerabilities found`}
+                </p>
+              </div>
+            ))}
           </div>
         )}
       </div>
