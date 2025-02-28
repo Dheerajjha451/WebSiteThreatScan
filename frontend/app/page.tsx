@@ -21,10 +21,11 @@ export default function Home() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setResults(null);
 
     try {
       const response = await fetch(
-        "https://websitethreatscan.onrender.com/scan",
+      `${process.env.NEXT_PUBLIC_BASE_URL}/scan`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -48,6 +49,9 @@ export default function Home() {
           setError("An unknown error occurred.");
       }
   }
+  finally {
+    setLoading(false);
+}
   };
 
   return (
