@@ -1,9 +1,11 @@
 "use client";
 import { useState } from "react";
+import toast from "react-hot-toast";
 interface Vulnerability {
   id: string;
   description: string;
   severity: string;
+  level: string;
 }
 
 interface ScanResults {
@@ -20,6 +22,8 @@ interface ScanResults {
   command_injection?: boolean;
   exposed_webhooks?: boolean;
   ssl_tls?: boolean;
+  url_limit_exceeded?: boolean;
+  time_limit_exceeded?: boolean;
 }
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -51,13 +55,20 @@ export default function Home() {
       }
 
       const data = await response.json();
-      setResults(data);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-          setError(err.message);
-      } else {
-          setError("An unknown error occurred.");
-      }
+    setResults(data);
+
+    if (data.url_limit_exceeded) {
+      toast.error("URL crawl limit exceeded. Only the first 20 URLs were scanned.");
+    }
+    if (data.time_limit_exceeded) {
+      toast.error("Time limit exceeded. The scan was stopped after 50 seconds.");
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      setError(err.message);
+    } else {
+      setError("An unknown error occurred.");
+    }
   }
   finally {
     setLoading(false);
@@ -76,7 +87,27 @@ export default function Home() {
             Analyze your website for security vulnerabilities
           </p>
         </div>
-
+        <div className="flex flex-wrap justify-center gap-2 mb-8">
+          {[
+            { key: 'sql_injection', label: 'SQL Injection' },
+            { key: 'xss', label: 'XSS' },
+            { key: 'sensitive_api_key', label: 'API Key' },
+            {key:'sensitive_personal_info',label:'Personal Information'},
+            { key: 'csrf', label: 'CSRF' },
+            { key: 'insecure_cookies', label: 'Insecure Cookies' },
+            { key: 'directory_traversal', label: 'Directory Traversal' },
+            { key: 'command_injection', label: 'Command Injection' },
+            { key: 'exposed_webhooks', label: 'Exposed Webhooks' },
+            { key: 'ssl_tls', label: 'SSL/TLS' },
+          ].map(({ key, label }) => (
+            <span
+              key={key}
+              className="bg-blue-500 text-white  font-medium px-3 py-1 rounded-full"
+            >
+              {label}
+            </span>
+          ))}
+        </div>
         {/* Search Form */}
         <form onSubmit={handleSubmit} className="mb-12">
           <div className="relative">
@@ -169,24 +200,6 @@ export default function Home() {
                 </p>
               </div>
             )}
-              {[
-              { key: 'sql_injection', label: 'SQL Injection' },
-              { key: 'xss', label: 'XSS' },
-              { key: 'sensitive_info', label: 'Sensitive Information' },
-              { key: 'csrf', label: 'CSRF' },
-              { key: 'insecure_cookies', label: 'Insecure Cookies' },
-              { key: 'directory_traversal', label: 'Directory Traversal' },
-              { key: 'security_headers', label: 'Security Headers' },
-              { key: 'command_injection', label: 'Command Injection' },
-              { key: 'exposed_webhooks', label: 'Exposed Webhooks' },
-              { key: 'ssl_tls', label: 'SSL/TLS' },
-            ].map(({ key, label }) => (
-              <div key={key} className="bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-4">
-                <p className="text-emerald-400 text-sm font-medium">
-                  {results[key as keyof ScanResults] ? `${label} vulnerability found` : `No ${label} vulnerabilities found`}
-                </p>
-              </div>
-            ))}
           </div>
         )}
       </div>

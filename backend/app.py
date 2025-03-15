@@ -5,7 +5,8 @@ import re
 import urllib.parse
 from datetime import datetime
 from typing import Dict, List, Set
-
+import ssl
+import socket
 import aiohttp
 import colorama
 import requests
@@ -40,12 +41,15 @@ CORS(app)
 
 
 class WebSecurityScanner:
-    def __init__(self, target_url: str, max_depth: int = 3):
+    def __init__(self, target_url: str, max_depth: int = 3, max_urls: int = 20, max_time: int = 50):
         self.target_url = target_url
         self.max_depth = max_depth
+        self.max_urls = max_urls
         self.visited_urls: Set[str] = set()
         self.vulnerabilities: List[Dict] = []
         self.timeout = ClientTimeout(total=10)
+        self.url_limit_exceeded = False
+        self.time_limit_exceeded = False
         colorama.init()
 
     @staticmethod
@@ -276,35 +280,35 @@ class WebSecurityScanner:
                 exc_info=True,
             )
 
-    async def check_security_headers_async(
-        self, session: aiohttp.ClientSession, url: str
-    ) -> None:
-        important_headers = {
-            "Content-Security-Policy": "Missing CSP header",
-            "X-Content-Type-Options": "Missing X-Content-Type-Options header",
-            "X-Frame-Options": "Missing X-Frame-Options header",
-            "Strict-Transport-Security": "Missing HSTS header",
-            "X-XSS-Protection": "Missing X-XSS-Protection header",
-        }
-        try:
-            _, headers, _ = await self.async_get(session, url)
-            missing = [
-                msg
-                for header, msg in important_headers.items()
-                if header not in headers
-            ]
-            if missing:
-                self.report_vulnerability(
-                    {
-                        "type": "Security Headers Missing",
-                        "url": url,
-                        "details": ", ".join(missing),
-                    }
-                )
-        except Exception as e:
-            logger.error(
-                "Error checking security headers on %s: %s", url, str(e), exc_info=True
-            )
+    # async def check_security_headers_async(
+    #     self, session: aiohttp.ClientSession, url: str
+    # ) -> None:
+    #     important_headers = {
+    #         "Content-Security-Policy": "Missing CSP header",
+    #         "X-Content-Type-Options": "Missing X-Content-Type-Options header",
+    #         "X-Frame-Options": "Missing X-Frame-Options header",
+    #         "Strict-Transport-Security": "Missing HSTS header",
+    #         "X-XSS-Protection": "Missing X-XSS-Protection header",
+    #     }
+    #     try:
+    #         _, headers, _ = await self.async_get(session, url)
+    #         missing = [
+    #             msg
+    #             for header, msg in important_headers.items()
+    #             if header not in headers
+    #         ]
+    #         if missing:
+    #             self.report_vulnerability(
+    #                 {
+    #                     "type": "Security Headers Missing",
+    #                     "url": url,
+    #                     "details": ", ".join(missing),
+    #                 }
+    #             )
+    #     except Exception as e:
+    #         logger.error(
+    #             "Error checking security headers on %s: %s", url, str(e), exc_info=True
+    #         )
 
     async def check_command_injection_async(
         self, session: aiohttp.ClientSession, url: str
@@ -429,7 +433,7 @@ class WebSecurityScanner:
                         self.check_csrf_async(session, url),
                         self.check_insecure_cookies_async(session, url),
                         self.check_directory_traversal_async(session, url),
-                        self.check_security_headers_async(session, url),
+                        # self.check_security_headers_async(session, url),
                         self.check_command_injection_async(session, url),
                         self.check_exposed_webhooks_async(session, url),
                         self.check_ssl_tls_async(session, url),
@@ -447,6 +451,9 @@ class WebSecurityScanner:
     def crawl(self, url: str, depth: int = 0) -> None:
         if depth > self.max_depth or url in self.visited_urls:
             return
+        if len(self.visited_urls) >= self.max_urls:
+            self.url_limit_exceeded = True
+            return
         try:
             self.visited_urls.add(url)
             response = requests.get(url, verify=False)
@@ -460,6 +467,20 @@ class WebSecurityScanner:
             logger.error("Error crawling %s: %s", url, str(e), exc_info=True)
 
     def report_vulnerability(self, vulnerability: Dict) -> None:
+        vulnerability_levels = {
+            "SQL Injection": "high",
+            "Cross-Site Scripting (XSS)": "high",
+            "Sensitive Information Exposure": "medium",
+            "Potential CSRF Vulnerability": "medium",
+            "Insecure Cookie Settings": "low",
+            "Directory Traversal": "high",
+            "Security Headers Missing": "medium",
+            "Command Injection": "high",
+            "Exposed Webhook": "medium",
+            "Insecure Protocol": "high",
+            "SSL/TLS Certification Issue": "high",
+        }
+        vulnerability["level"] = vulnerability_levels.get(vulnerability["type"], "low")
         self.vulnerabilities.append(vulnerability)
         logger.warning("Vulnerability Found:")
         for key, value in vulnerability.items():
@@ -500,7 +521,9 @@ async def async_scan_endpoint():
 
 def scan_endpoint():
     return asyncio.run(async_scan_endpoint())
-
+@app.route('/scan', methods=['POST'])
+def scan_route():
+    return scan_endpoint()
 
 if __name__ == "__main__":
     logger.info("Starting Web Security Scanner application")
