@@ -19,7 +19,7 @@
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5",
+    "typescript": "^7",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.4.5"
   },
