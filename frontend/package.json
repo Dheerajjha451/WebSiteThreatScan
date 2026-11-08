@@ -20,7 +20,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "typescript": "^5",
-    "eslint": "^9.39.5",
+    "eslint": "^10.14.0",
     "eslint-config-next": "16.4.5"
   },
   "engines": {
