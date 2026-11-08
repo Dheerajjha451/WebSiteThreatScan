@@ -1,4 +1,5 @@
 import { isScanReport } from "@/lib/report";
+import { sameOriginRequest } from "@/lib/request";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -33,7 +34,7 @@ async function readLimited(stream: ReadableStream<Uint8Array> | null, limit: num
 export async function POST(request: Request) {
   // A browser must submit through this app's origin. Tokens stay on the server.
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) return json({ error: "Cross-origin scan requests are not allowed." }, 403);
+  if (!sameOriginRequest(request.url, request.headers.get("host"), origin, process.env.SCANNER_APP_ORIGIN)) return json({ error: "Cross-origin scan requests are not allowed." }, 403);
   if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     return json({ error: "Content-Type must be application/json." }, 415);
   }

@@ -84,7 +84,7 @@ cd backend
 
 Build the frontend using `npm run build` and start it using `npm start`. Set `SCANNER_API_URL` to the backend's internal address. To require authentication between the two services, set the same strong `SCANNER_API_KEY` on **both servers**. Never expose that key as a `NEXT_PUBLIC_` variable. The API key protects the backend connection; it does not authenticate users of the frontend. Add user authentication and shared gateway quotas before offering a private or large-scale scanning service.
 
-Terminate HTTPS at your edge, configure deployment-appropriate HSTS, block outbound private/metadata networks, and add shared rate limits. Process-local limits are conservative and are not a distributed quota system. See the [security model](docs/SECURITY.md) for proxy, CSP, privacy and operating constraints.
+Behind a reverse proxy, set SCANNER_APP_ORIGIN on the Next.js server to the exact public origin (for example https://scanner.example.com). Terminate HTTPS at your edge, configure deployment-appropriate HSTS, block outbound private/metadata networks, and add shared rate limits. Process-local limits are conservative and are not a distributed quota system. See the [security model](docs/SECURITY.md) for proxy, CSP, privacy and operating constraints.
 
 ## Documentation
 

@@ -14,7 +14,7 @@ Local development binds Flask to loopback with debug disabled. Use Gunicorn or a
 
 The process guard permits two scans in flight and five admitted attempts per remote IP per minute, with a bounded 4096-client map. Counts reset on restart; eviction can reset old-client quotas. Multiple workers/instances multiply capacity and quotas. Through the Next.js proxy, Flask normally sees the proxy's IP, so the local quota is shared across its users. Configure shared admission/rate limits at the gateway for scale. Do not blindly trust X-Forwarded-For; if proxy trust is needed, restrict it to known infrastructure and an exact hop count.
 
-CORS is disabled unless SCANNER_ALLOWED_ORIGINS explicitly lists allowed origins; wildcard configuration is rejected. The browser normally uses the same-origin Next.js proxy. Its Origin check prevents ordinary cross-origin browser submissions; it is not an authentication mechanism and cannot stop non-browser clients. Body limits, timeouts, redirect limits, result caps and response-size limits bound resource use.
+CORS is disabled unless SCANNER_ALLOWED_ORIGINS explicitly lists allowed origins; wildcard configuration is rejected. The browser normally uses the same-origin Next.js proxy. Its Origin check compares the browser Origin with the incoming Host and request protocol; set SCANNER_APP_ORIGIN to your exact public HTTPS origin behind a reverse proxy. This prevents ordinary cross-origin browser submissions; it is not an authentication mechanism and cannot stop non-browser clients. Body limits, timeouts, redirect limits, result caps and response-size limits bound resource use.
 
 ## Browser security
 
